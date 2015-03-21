@@ -1,0 +1,78 @@
+---
+title: "Predicting the manner in which people did the exercise"
+---
+##Background
+Nowadays, we have several devices such as Jawbone Up, Nike FuelBand, and Fitbit to collect a large amount of data about personal activity relatively inexpensively.There are many people who uses these devices to take measure of their personal activity to improve their health, to find patterns in their behaviour, or because they are tech geeks. 
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+##Preprocessing 
+The very first step was to load and explore data. Based on our study we saw that there are many columns which has NA and some other undefined characters. Therefore we took care while loading data so as to convert all undefined character to NA.
+```{r}
+set.seed(1234)
+library(caret)
+setwd("~/Dropbox/Coursera/Data Science Specialization/practical machine learning/prediction Assignment")
+traindata <- read.csv("pml-training.csv", header=T, na.strings=c("NA", "#DIV/0!"))
+testdata <- read.csv("pml-testing.csv", header=T, na.strings=c("NA", "#DIV/0!"))
+A <-dim(traindata)
+```
+```{r ,results='hide'}
+summary(traindata)
+```
+There are `r A[2]` columns. Before using all columns for modelling,  we cleaned data so as to remove all columns that have many NA’s. Meanwhile there are some columns that gives user and timestamp info only and doesn't play role in studying their behaviour. Therefore we removed  those columns too.
+```{r}
+trainnew <-traindata[,!apply(traindata,2,function(x) any(is.na(x)))]
+trainnew <-trainnew[,-c(1:7)]
+B <- dim(trainnew)
+```
+Finally after cleaning we had only  `r B[2] ` columns. We again analysed data to see the correlation among these columns because correlated variable can reduce the accuracy and overload the model.
+```{r , results='hide'}
+M <-abs(cor(trainnew[,-53]))
+diag(M)<-0
+which(M>0.8,arr.ind=T)
+```
+There were many correlated variables. To reduce effect of these correlated  variables and to standardise it we used Principal Component Analysis (PCA) in our data set. We partioned our data in two sets, training and testing to train our model and test its accuracy. We applied PCA in both sets of data.
+```{r}
+intrain<-createDataPartition(y=trainnew$classe,p=0.7,list= FALSE)
+testing <- trainnew[-intrain,]
+training <-trainnew[intrain,]
+dim(training)
+prepro <-preProcess(training[,-53],method = c("center", "scale", "knnImpute", "pca"), thresh=0.9)
+clean_data <-predict(prepro,training[,-53])
+```
+
+##Modelling
+After having clean data we fit KNN and Random Forest algorithm in processed data.
+```{r}
+dim(clean_data)
+modelFit <- train(training$classe ~.,data=clean_data, method="knn")
+Pmodel <- train(training$classe~., data=clean_data, method = "rf", tuneLength = 1, ntree = 25)
+
+```
+
+##Cross-Validation and Model Evaluation
+Once we fit the model we evaluate it by applying the fitted model in our test set and measuring its accuracy by confusion matrix.
+```{r}
+test <-predict(prepro,testing[,-53])
+KNNmodel <- confusionMatrix(testing$classe ,predict(modelFit,test))
+KNNmodel
+RFmodel <- confusionMatrix(predict(Pmodel,test),testing$classe)
+RFmodel
+```
+We can see from the result that our KNN model is `r KNNmodel$overall[1]` accurate while our RF model is `r RFmodel$overall[1]` accurate. 
+
+##Conclusions
+AS Random Forest is slightly more accurate than KNN we will be using it to predict classe of our test data.
+
+##Prediction 
+Finally we used model in test set and write it to new file.
+```{r}
+testdatanew <- testdata[,names(testdata) %in% names(trainnew)]
+test_clean_data <- predict(prepro,testdatanew[,-53])
+predict_classe <- predict(Pmodel,test_clean_data)
+predictedset <- cbind(testdata,predict_classe)
+write.csv(predictedset,file = "pml_testing_predicted.csv",col.names = TRUE)
+```
+
+
